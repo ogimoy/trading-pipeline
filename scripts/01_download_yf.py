@@ -80,9 +80,14 @@ def yf_download_one(
             if df is None or df.empty:
                 return pd.DataFrame()
 
-            # Rename Adj Close -> AdjClose
+            # If yfinance returns MultiIndex columns like ('Close','AAPL'), flatten to just 'Close'
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [c[0] for c in df.columns]  # keep first level only
+
+            # Normalize names
             if "Adj Close" in df.columns:
                 df = df.rename(columns={"Adj Close": "AdjClose"})
+
 
             # Make index explicit and add ticker column
             df = df.reset_index()  # Date becomes a column (usually "Date")
@@ -109,7 +114,7 @@ def save_parquet(df: pd.DataFrame, out_dir: str, filename: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download Yahoo Finance OHLCV and save as Parquet.")
-    parser.add_argument("--tickers-dir", type=str, required=True, help="Directory containing ticker CSV files.")
+    parser.add_argument("--tickers-dir", type=str, default="", help="Directory containing ticker CSV files.")
     parser.add_argument("--out-dir", type=str, default=os.path.join("data", "raw", "yf_daily"))
     parser.add_argument("--start", type=str, default="2012-01-01")
     parser.add_argument("--end", type=str, default=datetime.today().strftime("%Y-%m-%d"))
@@ -119,9 +124,18 @@ def main() -> None:
     parser.add_argument("--download-vix", action="store_true", help="Also download VIX (^VIX) and save as VIX.parquet.")
     parser.add_argument("--sep", type=str, default=";", help="CSV separator for ticker lists (default ';').")
     parser.add_argument("--max-retries", type=int, default=3, help="Retries per ticker download.")
+    parser.add_argument("--test-tickers", type=str, default="", help="Comma-separated tickers to download (overrides tickers-dir).")
+
     args = parser.parse_args()
 
-    tickers = load_tickers_from_dir(args.tickers_dir)
+    if args.test_tickers.strip():
+        tickers = [t.strip() for t in args.test_tickers.split(",") if t.strip()]
+    else:
+        if not args.tickers_dir:
+            raise ValueError("Either --tickers-dir or --test-tickers must be provided.")
+        tickers = load_tickers_from_dir(args.tickers_dir)
+
+
 
     print(f"Found {len(tickers)} unique tickers from: {args.tickers_dir}")
     print("First 10 tickers:", tickers[:10])
